@@ -57,7 +57,7 @@ class SocketManager(private val context: Context) {
                 webSocketFactory = NgrokOkHttpClient.createClient()
             }
 
-            socket = IO.socket("https://fd36c9c897be.ngrok-free.app", opts)
+            socket = IO.socket("https://abc639e858bf.ngrok-free.app", opts)
 
             setupEventHandlers()
             socket?.connect()
@@ -157,6 +157,7 @@ class SocketManager(private val context: Context) {
             // Handle server pong responses
             on("server_pong") { args ->
                 if (args.isNotEmpty()) {
+                    println("Server Pong:- The server Has Responded.")
                     Log.d("SocketManager", "🏓 Server pong received")
                 }
             }
