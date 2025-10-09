@@ -26,6 +26,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var compName: ComponentName
     private lateinit var socketManager: EnhancedSocketManager
     private lateinit var mdmPolicyManager: MdmPolicyManager
+    private lateinit var appManager: AppManager
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -36,25 +37,36 @@ class MainActivity : ComponentActivity() {
         compName = ComponentName(this, MyDeviceAdminReceiver::class.java)
         socketManager = EnhancedSocketManager(this)
         mdmPolicyManager = MdmPolicyManager(this)
+        appManager = AppManager(this)
         
         setContent {
-            MdmApp(
-                isAdminActive = devicePolicyManager.isAdminActive(compName),
-                onEnableAdmin = { enableAdmin() },
-                onLockDevice = { lockDevice() },
-                onStartService = { startMdmService() },
-                onStopService = { stopMdmService() },
-                onBlockInstallation = { blockInstallation() },
-                onAllowInstallation = { allowInstallation() },
-                onDisableCamera = { disableCamera() },
-                onEnableCamera = { enableCamera() },
-                onApplyLockdown = { applySystemLockdown() },
-                onRemoveLockdown = { removeSystemLockdown() },
-                onBlockCategories = { blockAppCategories() },
-                onUnblockCategories = { unblockAppCategories() },
-                onDisableContentCreation = { disableContentCreation() },
-                onEnableContentCreation = { enableContentCreation() }
-            )
+            var currentScreen by remember { mutableStateOf("main") }
+            
+            when (currentScreen) {
+                "main" -> MdmApp(
+                    isAdminActive = devicePolicyManager.isAdminActive(compName),
+                    onEnableAdmin = { enableAdmin() },
+                    onLockDevice = { lockDevice() },
+                    onStartService = { startMdmService() },
+                    onStopService = { stopMdmService() },
+                    onBlockInstallation = { blockInstallation() },
+                    onAllowInstallation = { allowInstallation() },
+                    onDisableCamera = { disableCamera() },
+                    onEnableCamera = { enableCamera() },
+                    onApplyLockdown = { applySystemLockdown() },
+                    onRemoveLockdown = { removeSystemLockdown() },
+                    onBlockCategories = { blockAppCategories() },
+                    onUnblockCategories = { unblockAppCategories() },
+                    onDisableContentCreation = { disableContentCreation() },
+                    onEnableContentCreation = { enableContentCreation() },
+                    onManageApps = { currentScreen = "apps" },
+                    onEnableAccessibility = { enableAccessibilityService() }
+                )
+                "apps" -> AppManagementScreen(
+                    appManager = appManager,
+                    onBack = { currentScreen = "main" }
+                )
+            }
         }
         
         // Initialize socket connection
@@ -63,6 +75,7 @@ class MainActivity : ComponentActivity() {
         // Start background service if admin is active
         if (devicePolicyManager.isAdminActive(compName)) {
             startMdmService()
+            startAppInterceptorService()
         }
     }
     
@@ -77,6 +90,11 @@ class MainActivity : ComponentActivity() {
         if (!socketManager.isConnected()) {
             Log.d("MainActivity", "🔄 Reconnecting socket on resume...")
             socketManager.connect()
+        }
+        
+        // Ensure app interceptor is running if admin is active
+        if (devicePolicyManager.isAdminActive(compName)) {
+            startAppInterceptorService()
         }
     }
     
@@ -198,6 +216,45 @@ class MainActivity : ComponentActivity() {
         val message = result.optString("message", "Operation completed")
         Toast.makeText(this, message, Toast.LENGTH_LONG).show()
     }
+    
+    private fun startAppInterceptorService() {
+        try {
+            val serviceIntent = Intent(this, AppInterceptorService::class.java).apply {
+                action = AppInterceptorService.ACTION_START_MONITORING
+            }
+            startService(serviceIntent)
+            Log.d("MainActivity", "✅ App Interceptor Service started")
+        } catch (e: Exception) {
+            Log.e("MainActivity", "❌ Failed to start App Interceptor Service: ${e.message}")
+        }
+    }
+    
+    private fun stopAppInterceptorService() {
+        try {
+            val serviceIntent = Intent(this, AppInterceptorService::class.java).apply {
+                action = AppInterceptorService.ACTION_STOP_MONITORING
+            }
+            startService(serviceIntent)
+            Log.d("MainActivity", "🛑 App Interceptor Service stopped")
+        } catch (e: Exception) {
+            Log.e("MainActivity", "❌ Failed to stop App Interceptor Service: ${e.message}")
+        }
+    }
+    
+    private fun enableAccessibilityService() {
+        try {
+            val intent = Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
+            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            startActivity(intent)
+            Toast.makeText(
+                this, 
+                "Please enable 'MDM App Blocker' in Accessibility settings for app blocking to work", 
+                Toast.LENGTH_LONG
+            ).show()
+        } catch (e: Exception) {
+            Toast.makeText(this, "Could not open accessibility settings", Toast.LENGTH_SHORT).show()
+        }
+    }
 }
 
 
@@ -217,7 +274,9 @@ fun MdmApp(
     onBlockCategories: () -> Unit,
     onUnblockCategories: () -> Unit,
     onDisableContentCreation: () -> Unit,
-    onEnableContentCreation: () -> Unit
+    onEnableContentCreation: () -> Unit,
+    onManageApps: () -> Unit,
+    onEnableAccessibility: () -> Unit
 ) {
     MaterialTheme {
         Surface(
@@ -321,6 +380,29 @@ fun MdmApp(
                     ) {
                         Text("Stop Service")
                     }
+                }
+
+                // App Management Button
+                Button(
+                    onClick = onManageApps,
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = isAdminActive,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.tertiary
+                    )
+                ) {
+                    Text("📱 Manage Apps")
+                }
+
+                // Enable Accessibility Service Button
+                Button(
+                    onClick = onEnableAccessibility,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.secondary
+                    )
+                ) {
+                    Text("🛡️ Enable App Blocking")
                 }
 
                 // Device Control Section

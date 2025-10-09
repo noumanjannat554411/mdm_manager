@@ -634,4 +634,230 @@ class MdmPolicyManager(private val context: Context) {
             data?.let { put("data", it) }
         }
     }
+    
+    /**
+     * Lock specific apps (using AppManager integration)
+     */
+    fun lockApps(packageNames: List<String>): JSONObject {
+        return try {
+            val appManager = AppManager(context)
+            var successCount = 0
+            var errorCount = 0
+            
+            packageNames.forEach { packageName ->
+                if (appManager.lockApp(packageName)) {
+                    successCount++
+                    Log.d(TAG, "✅ Locked app: $packageName")
+                } else {
+                    errorCount++
+                    Log.w(TAG, "❌ Failed to lock app: $packageName")
+                }
+            }
+            
+            val message = "App locking completed: $successCount succeeded, $errorCount failed"
+            Log.d(TAG, message)
+            createResult("lock_apps", "success", message, 
+                JSONObject().apply {
+                    put("locked_count", successCount)
+                    put("failed_count", errorCount)
+                    put("total_requested", packageNames.size)
+                })
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error locking apps: ${e.message}")
+            createResult("lock_apps", "error", "Failed to lock apps: ${e.message}")
+        }
+    }
+    
+    /**
+     * Unlock specific apps (using AppManager integration)
+     */
+    fun unlockApps(packageNames: List<String>): JSONObject {
+        return try {
+            val appManager = AppManager(context)
+            var successCount = 0
+            var errorCount = 0
+            
+            packageNames.forEach { packageName ->
+                if (appManager.unlockApp(packageName)) {
+                    successCount++
+                    Log.d(TAG, "✅ Unlocked app: $packageName")
+                } else {
+                    errorCount++
+                    Log.w(TAG, "❌ Failed to unlock app: $packageName")
+                }
+            }
+            
+            val message = "App unlocking completed: $successCount succeeded, $errorCount failed"
+            Log.d(TAG, message)
+            createResult("unlock_apps", "success", message, 
+                JSONObject().apply {
+                    put("unlocked_count", successCount)
+                    put("failed_count", errorCount)
+                    put("total_requested", packageNames.size)
+                })
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error unlocking apps: ${e.message}")
+            createResult("unlock_apps", "error", "Failed to unlock apps: ${e.message}")
+        }
+    }
+    
+    /**
+     * Hide specific apps (using AppManager integration)
+     */
+    fun hideApps(packageNames: List<String>): JSONObject {
+        return try {
+            val appManager = AppManager(context)
+            var successCount = 0
+            var errorCount = 0
+            
+            packageNames.forEach { packageName ->
+                if (appManager.hideApp(packageName)) {
+                    successCount++
+                    Log.d(TAG, "✅ Hidden app: $packageName")
+                } else {
+                    errorCount++
+                    Log.w(TAG, "❌ Failed to hide app: $packageName")
+                }
+            }
+            
+            val message = "App hiding completed: $successCount succeeded, $errorCount failed"
+            Log.d(TAG, message)
+            createResult("hide_apps", "success", message, 
+                JSONObject().apply {
+                    put("hidden_count", successCount)
+                    put("failed_count", errorCount)
+                    put("total_requested", packageNames.size)
+                })
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error hiding apps: ${e.message}")
+            createResult("hide_apps", "error", "Failed to hide apps: ${e.message}")
+        }
+    }
+    
+    /**
+     * Show specific apps (using AppManager integration)
+     */
+    fun showApps(packageNames: List<String>): JSONObject {
+        return try {
+            val appManager = AppManager(context)
+            var successCount = 0
+            var errorCount = 0
+            
+            packageNames.forEach { packageName ->
+                if (appManager.showApp(packageName)) {
+                    successCount++
+                    Log.d(TAG, "✅ Shown app: $packageName")
+                } else {
+                    errorCount++
+                    Log.w(TAG, "❌ Failed to show app: $packageName")
+                }
+            }
+            
+            val message = "App showing completed: $successCount succeeded, $errorCount failed"
+            Log.d(TAG, message)
+            createResult("show_apps", "success", message, 
+                JSONObject().apply {
+                    put("shown_count", successCount)
+                    put("failed_count", errorCount)
+                    put("total_requested", packageNames.size)
+                })
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error showing apps: ${e.message}")
+            createResult("show_apps", "error", "Failed to show apps: ${e.message}")
+        }
+    }
+    
+    /**
+     * Hide apps from device launcher (system-wide)
+     */
+    fun hideAppsFromDevice(packageNames: List<String>): JSONObject {
+        return try {
+            if (isAdminActive() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                var successCount = 0
+                var errorCount = 0
+                
+                packageNames.forEach { packageName ->
+                    try {
+                        // Hide the app from launcher
+                        devicePolicyManager.setApplicationHidden(componentName, packageName, true)
+                        successCount++
+                        Log.d(TAG, "✅ Hidden app from device: $packageName")
+                    } catch (e: Exception) {
+                        errorCount++
+                        Log.w(TAG, "❌ Failed to hide app from device: $packageName - ${e.message}")
+                    }
+                }
+                
+                val message = "Device app hiding completed: $successCount succeeded, $errorCount failed"
+                Log.d(TAG, message)
+                createResult("hide_apps_device", "success", message, 
+                    JSONObject().apply {
+                        put("hidden_count", successCount)
+                        put("failed_count", errorCount)
+                        put("total_requested", packageNames.size)
+                    })
+            } else {
+                Log.e(TAG, "❌ Cannot hide apps from device - admin not active or API level too low")
+                createResult("hide_apps_device", "error", "Device admin not active or unsupported API level")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error hiding apps from device: ${e.message}")
+            createResult("hide_apps_device", "error", "Failed to hide apps from device: ${e.message}")
+        }
+    }
+    
+    /**
+     * Show apps on device launcher (system-wide)
+     */
+    fun showAppsOnDevice(packageNames: List<String>): JSONObject {
+        return try {
+            if (isAdminActive() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                var successCount = 0
+                var errorCount = 0
+                
+                packageNames.forEach { packageName ->
+                    try {
+                        // Show the app in launcher
+                        devicePolicyManager.setApplicationHidden(componentName, packageName, false)
+                        successCount++
+                        Log.d(TAG, "✅ Shown app on device: $packageName")
+                    } catch (e: Exception) {
+                        errorCount++
+                        Log.w(TAG, "❌ Failed to show app on device: $packageName - ${e.message}")
+                    }
+                }
+                
+                val message = "Device app showing completed: $successCount succeeded, $errorCount failed"
+                Log.d(TAG, message)
+                createResult("show_apps_device", "success", message, 
+                    JSONObject().apply {
+                        put("shown_count", successCount)
+                        put("failed_count", errorCount)
+                        put("total_requested", packageNames.size)
+                    })
+            } else {
+                Log.e(TAG, "❌ Cannot show apps on device - admin not active or API level too low")
+                createResult("show_apps_device", "error", "Device admin not active or unsupported API level")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error showing apps on device: ${e.message}")
+            createResult("show_apps_device", "error", "Failed to show apps on device: ${e.message}")
+        }
+    }
+    
+    /**
+     * Check if app is hidden on device
+     */
+    fun isAppHiddenOnDevice(packageName: String): Boolean {
+        return try {
+            if (isAdminActive() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                devicePolicyManager.isApplicationHidden(componentName, packageName)
+            } else {
+                false
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "❌ Error checking if app is hidden on device: ${e.message}")
+            false
+        }
+    }
 }

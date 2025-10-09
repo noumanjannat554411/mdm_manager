@@ -44,6 +44,8 @@
     
     <!-- Usage Stats (for app monitoring) -->
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions"/>
+    <uses-permission android:name="android.permission.GET_TASKS" tools:ignore="ProtectedPermissions"/>
+    <uses-permission android:name="android.permission.REORDER_TASKS" />
     
     <!-- Accessibility (for advanced control) -->
     <uses-permission android:name="android.permission.BIND_ACCESSIBILITY_SERVICE" tools:ignore="ProtectedPermissions"/>
@@ -88,6 +90,25 @@
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+        
+        <!-- App Interceptor Service -->
+        <service
+            android:name=".AppInterceptorService"
+            android:enabled="true"
+            android:exported="false" />
+        
+        <!-- MDM Accessibility Service -->
+        <service
+            android:name=".MdmAccessibilityService"
+            android:exported="false"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
+        </service>
         
         <!-- Boot Receiver for auto-start -->
         <receiver

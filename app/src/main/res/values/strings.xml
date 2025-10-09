@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">manager</string>
+    <string name="accessibility_service_description">MDM App Blocker - Blocks access to locked applications for enterprise device management.</string>
 </resources>
