@@ -8,6 +8,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.UserManager
 import android.util.Log
+import androidx.annotation.RequiresApi
 import org.json.JSONObject
 import org.json.JSONArray
 
@@ -32,7 +33,145 @@ class MdmPolicyManager(private val context: Context) {
     companion object {
         private const val TAG = "MdmPolicyManager"
     }
+    /**
+     * Enhanced USB file transfer restriction with comprehensive blocking
+     * Supports Android 12+ with setUsbDataSignalingEnabled and Android 5+ with user restrictions
+     */
+    fun restrictUsbFileTransfer(): JSONObject {
+        return try {
+            if (devicePolicyManager.isAdminActive(componentName)) {
+                var successCount = 0
+                var errorCount = 0
+                
+                // Method 1: Disable USB data signaling (Android 12+)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    try {
+                        devicePolicyManager.setUsbDataSignalingEnabled(false)
+                        successCount++
+                        Log.d(TAG, "✅ USB data signaling disabled (Android 12+ API)")
+                    } catch (e: Exception) {
+                        errorCount++
+                        Log.w(TAG, "Could not disable USB data signaling: ${e.message}")
+                    }
+                } else {
+                    Log.d(TAG, "📱 Android 12+ API not available, using fallback method")
+                }
+                
+                // Method 2: Apply user restrictions (fallback for older versions)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    try {
+                        devicePolicyManager.addUserRestriction(componentName, UserManager.DISALLOW_USB_FILE_TRANSFER)
+                        successCount++
+                        Log.d(TAG, "✅ USB file transfer user restriction applied")
+                    } catch (e: Exception) {
+                        errorCount++
+                        Log.w(TAG, "Could not apply USB file transfer restriction: ${e.message}")
+                    }
+                }
+                
+                val message = if (successCount > 0) {
+                    "USB file transfer blocked successfully ($successCount methods applied)"
+                } else {
+                    "Failed to block USB file transfer"
+                }
+                
+                Log.d(TAG, "🚫 $message")
+                createResult("restrict_usb", "success", message)
+            } else {
+                Log.e(TAG, "❌ Cannot restrict USB - admin not active")
+                createResult("restrict_usb", "error", "Device admin not active")
+            }
+        } catch (e: SecurityException) {
+            Log.e(TAG, "❌ Security error restricting USB: ${e.message}")
+            createResult("restrict_usb", "error", "Security error: ${e.message}")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error restricting USB: ${e.message}")
+            createResult("restrict_usb", "error", "Error: ${e.message}")
+        }
+    }
+
+    /**
+     * Enhanced USB file transfer allowance with comprehensive enabling
+     * Supports Android 12+ with setUsbDataSignalingEnabled and Android 5+ with user restrictions
+     */
+    fun allowUsbFileTransfer(): JSONObject {
+        return try {
+            if (devicePolicyManager.isAdminActive(componentName)) {
+                var successCount = 0
+                var errorCount = 0
+                
+                // Method 1: Enable USB data signaling (Android 12+)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    try {
+                        devicePolicyManager.setUsbDataSignalingEnabled(true)
+                        successCount++
+                        Log.d(TAG, "✅ USB data signaling enabled (Android 12+ API)")
+                    } catch (e: Exception) {
+                        errorCount++
+                        Log.w(TAG, "Could not enable USB data signaling: ${e.message}")
+                    }
+                } else {
+                    Log.d(TAG, "📱 Android 12+ API not available, using fallback method")
+                }
+                
+                // Method 2: Remove user restrictions (fallback for older versions)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    try {
+                        devicePolicyManager.clearUserRestriction(componentName, UserManager.DISALLOW_USB_FILE_TRANSFER)
+                        successCount++
+                        Log.d(TAG, "✅ USB file transfer user restriction removed")
+                    } catch (e: Exception) {
+                        errorCount++
+                        Log.w(TAG, "Could not remove USB file transfer restriction: ${e.message}")
+                    }
+                }
+                
+                val message = if (successCount > 0) {
+                    "USB file transfer allowed successfully ($successCount methods applied)"
+                } else {
+                    "Failed to allow USB file transfer"
+                }
+                
+                Log.d(TAG, "✅ $message")
+                createResult("allow_usb", "success", message)
+            } else {
+                Log.e(TAG, "❌ Cannot allow USB - admin not active")
+                createResult("allow_usb", "error", "Device admin not active")
+            }
+        } catch (e: SecurityException) {
+            Log.e(TAG, "❌ Security error allowing USB: ${e.message}")
+            createResult("allow_usb", "error", "Security error: ${e.message}")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error allowing USB: ${e.message}")
+            createResult("allow_usb", "error", "Error: ${e.message}")
+        }
+    }
     
+    /**
+     * Check current USB file transfer status
+     */
+    fun getUsbFileTransferStatus(): JSONObject {
+        return try {
+            if (devicePolicyManager.isAdminActive(componentName)) {
+                val isRestricted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {
+                    userManager.hasUserRestriction(UserManager.DISALLOW_USB_FILE_TRANSFER)
+                } else {
+                    false
+                }
+                
+                createResult("usb_status", "success", "USB transfer ${if (isRestricted) "blocked" else "allowed"}")
+                    .apply {
+                        put("is_restricted", isRestricted)
+                        put("api_level", Build.VERSION.SDK_INT)
+                    }
+            } else {
+                createResult("usb_status", "error", "Device admin not active")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error checking USB status: ${e.message}")
+            createResult("usb_status", "error", "Error checking status: ${e.message}")
+        }
+    }
     fun isAdminActive(): Boolean {
         return devicePolicyManager.isAdminActive(componentName)
     }

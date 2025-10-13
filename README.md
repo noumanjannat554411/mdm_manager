@@ -11,6 +11,7 @@ A powerful Android Mobile Device Management (MDM) application that provides comp
 - **Factory Reset** - Remote device wiping capability
 - **Password Policies** - Enforce strong password requirements
 - **System Restrictions** - Control various device features and settings
+- **USB Cable Management** - Real-time USB detection and data transfer control
 - **Real-time Communication** - Instant command execution via Socket.IO
 - **Background Service** - Persistent MDM functionality
 - **Auto-start** - Service starts automatically on device boot
@@ -24,6 +25,16 @@ A powerful Android Mobile Device Management (MDM) application that provides comp
 - **Security Status** - Monitor security settings and compliance
 - **Bulk Commands** - Execute multiple commands simultaneously
 - **Error Handling** - Robust error reporting and recovery
+
+### 🔌 USB Cable Management
+- **Real-time Detection** - Instant USB cable connection/disconnection detection
+- **Automatic Blocking** - Auto-block USB data transfer when cable connected
+- **Manual Control** - Block/allow USB data transfer on demand
+- **Charging-only Mode** - Allow charging while blocking data access
+- **Visual Indicators** - Color-coded status cards and real-time updates
+- **Server Commands** - Remote USB control via `restrict_usb`, `allow_usb`, `get_usb_status`
+- **Android 12+ Support** - Leverages latest USB data signaling APIs
+- **Fallback Support** - User restrictions for older Android versions
 
 ## 📱 Architecture
 

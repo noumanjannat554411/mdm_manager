@@ -471,6 +471,9 @@ class EnhancedSocketManager(private val context: Context) {
             put("unblock_categories")
             put("disable_content_creation")
             put("enable_content_creation")
+            put("restrict_usb")
+            put("allow_usb")
+            put("get_usb_status")
             put("location_tracking")
             put("remote_control")
             put("content_restriction")
@@ -612,6 +615,21 @@ class EnhancedSocketManager(private val context: Context) {
                         }
                     }
                     mdmPolicyManager.setAppBlacklist(packages, false)
+                }
+
+                "restrict_usb" -> {
+                    Log.d("SocketManager", "🚫 Restrict USB command received")
+                    mdmPolicyManager.restrictUsbFileTransfer()
+                }
+
+                "allow_usb" -> {
+                    Log.d("SocketManager", "✅ Allow USB command received")
+                    mdmPolicyManager.allowUsbFileTransfer()
+                }
+
+                "get_usb_status" -> {
+                    Log.d("SocketManager", "📊 Get USB status command received")
+                    mdmPolicyManager.getUsbFileTransferStatus()
                 }
 
                 "ping" -> {

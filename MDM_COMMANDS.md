@@ -96,6 +96,28 @@ This document outlines the commands that can be sent from your MDM server to con
 }
 ```
 
+### USB Cable Management
+```json
+{
+  "command": "restrict_usb",
+  "timestamp": 1697123456789
+}
+```
+
+```json
+{
+  "command": "allow_usb",
+  "timestamp": 1697123456789
+}
+```
+
+```json
+{
+  "command": "get_usb_status",
+  "timestamp": 1697123456789
+}
+```
+
 ## Information Gathering
 
 ### Device Information
