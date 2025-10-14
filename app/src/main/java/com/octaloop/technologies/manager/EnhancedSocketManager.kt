@@ -14,9 +14,10 @@ class EnhancedSocketManager(private val context: Context) {
     private var socket: Socket? = null
     private var isConnecting = false
     private val mdmPolicyManager = MdmPolicyManager(context)
+    private val locationManager = LocationManager(context)
     
     // Get device ID for socket identification
-    private fun getDeviceId(): String {
+    fun getDeviceId(): String {
         return try {
             android.os.Build.SERIAL.takeIf { it.isNotEmpty() && it != "unknown" }
                 ?: android.provider.Settings.Secure.getString(
@@ -76,7 +77,7 @@ class EnhancedSocketManager(private val context: Context) {
                 webSocketFactory = NgrokOkHttpClient.createClient()
             }
 
-            socket = IO.socket("https://a9e91f11fce7.ngrok-free.app", opts)
+            socket = IO.socket("https://mdm-backend.octaloop.dev", opts)
 
             setupEventHandlers()
             socket?.connect()
@@ -661,6 +662,92 @@ class EnhancedSocketManager(private val context: Context) {
                         put("message", "Status sent")
                         put("timestamp", System.currentTimeMillis())
                         put("device_id", getDeviceId())
+                    }
+                }
+
+                "get_location" -> {
+                    Log.d("SocketManager", "📍 Get location command received")
+                    val result = JSONObject()
+                    locationManager.getCurrentLocation { locationData ->
+                        if (locationData != null) {
+                            result.apply {
+                                put("command", "get_location")
+                                put("status", "success")
+                                put("message", "Location obtained successfully")
+                                put("timestamp", System.currentTimeMillis())
+                                put("device_id", getDeviceId())
+                                put("location", locationData.toJson())
+                            }
+                        } else {
+                            result.apply {
+                                put("command", "get_location")
+                                put("status", "error")
+                                put("message", "Failed to get location")
+                                put("timestamp", System.currentTimeMillis())
+                                put("device_id", getDeviceId())
+                                put("location_status", locationManager.getLocationStatus())
+                            }
+                        }
+                        // Send location result
+                        emit("command_result", result)
+                        emit("location_update", result)
+                    }
+                    
+                    // Return immediate acknowledgment
+                    JSONObject().apply {
+                        put("command", "get_location")
+                        put("status", "processing")
+                        put("message", "Location request processing")
+                        put("timestamp", System.currentTimeMillis())
+                        put("device_id", getDeviceId())
+                    }
+                }
+
+                "start_location_tracking" -> {
+                    Log.d("SocketManager", "📍 Start location tracking command received")
+                    locationManager.startLocationUpdates { locationData ->
+                        val locationUpdate = JSONObject().apply {
+                            put("event", "location_update")
+                            put("device_id", getDeviceId())
+                            put("timestamp", System.currentTimeMillis())
+                            put("location", locationData.toJson())
+                        }
+                        emit("location_update", locationUpdate)
+                        Log.d("SocketManager", "📍 Location update sent: ${locationData.latitude}, ${locationData.longitude}")
+                    }
+                    
+                    JSONObject().apply {
+                        put("command", "start_location_tracking")
+                        put("status", "success")
+                        put("message", "Location tracking started")
+                        put("timestamp", System.currentTimeMillis())
+                        put("device_id", getDeviceId())
+                        put("location_status", locationManager.getLocationStatus())
+                    }
+                }
+
+                "stop_location_tracking" -> {
+                    Log.d("SocketManager", "🛑 Stop location tracking command received")
+                    locationManager.stopLocationUpdates()
+                    
+                    JSONObject().apply {
+                        put("command", "stop_location_tracking")
+                        put("status", "success")
+                        put("message", "Location tracking stopped")
+                        put("timestamp", System.currentTimeMillis())
+                        put("device_id", getDeviceId())
+                    }
+                }
+
+                "get_location_status" -> {
+                    Log.d("SocketManager", "📊 Get location status command received")
+                    JSONObject().apply {
+                        put("command", "get_location_status")
+                        put("status", "success")
+                        put("message", "Location status retrieved")
+                        put("timestamp", System.currentTimeMillis())
+                        put("device_id", getDeviceId())
+                        put("location_status", locationManager.getLocationStatus())
                     }
                 }
 

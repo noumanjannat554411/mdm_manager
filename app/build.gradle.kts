@@ -48,6 +48,16 @@ dependencies {
     implementation("io.socket:socket.io-client:2.1.0")
     implementation("org.json:json:20230227")
     implementation("com.squareup.okhttp3:okhttp:4.11.0")
+    
+    // Google Play Services for Location
+    implementation("com.google.android.gms:play-services-location:21.0.1")
+    implementation("com.google.android.gms:play-services-maps:18.1.0")
+    
+    // HTTP Client for Google APIs
+    implementation("com.squareup.retrofit2:retrofit:2.9.0")
+    implementation("com.squareup.retrofit2:converter-gson:2.9.0")
+    implementation("com.google.code.gson:gson:2.10.1")
+    
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)

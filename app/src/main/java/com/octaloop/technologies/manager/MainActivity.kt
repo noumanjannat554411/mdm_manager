@@ -6,6 +6,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.hardware.usb.UsbManager
 import android.os.Build
 import android.os.Bundle
@@ -14,6 +15,7 @@ import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.RequiresApi
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -23,6 +25,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.core.app.ActivityCompat
 
 class MainActivity : ComponentActivity() {
 
@@ -31,23 +34,45 @@ class MainActivity : ComponentActivity() {
     private lateinit var socketManager: EnhancedSocketManager
     private lateinit var mdmPolicyManager: MdmPolicyManager
     private lateinit var appManager: AppManager
+    private lateinit var locationManager: LocationManager
     private lateinit var usbReceiver: BroadcastReceiver
     private var usbStatus by mutableStateOf("USB: Disconnected") // State for USB status
     private var usbBlockingEnabled by mutableStateOf(false) // State for USB blocking
     private var isUsbConnected by mutableStateOf(false) // Track connection state
     private var currentUsbMode by mutableStateOf("") // Track current USB mode
+    private var locationStatus by mutableStateOf("Location: Not available") // State for location status
+    private var isLocationTrackingActive by mutableStateOf(false) // Track location tracking state
+    
+    // Permission launcher for location permissions
+    private val locationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val fineLocationGranted = permissions[android.Manifest.permission.ACCESS_FINE_LOCATION] ?: false
+        val coarseLocationGranted = permissions[android.Manifest.permission.ACCESS_COARSE_LOCATION] ?: false
+        
+        println("MainActivity:-📍 Permission results - Fine: $fineLocationGranted, Coarse: $coarseLocationGranted")
+        
+        if (fineLocationGranted && coarseLocationGranted) {
+            Toast.makeText(this, "✅ Location permissions granted", Toast.LENGTH_SHORT).show()
+            println("MainActivity:-✅ Location permissions granted")
+        } else {
+            Toast.makeText(this, "❌ Location permissions denied", Toast.LENGTH_LONG).show()
+            println("MainActivity:-❌ Location permissions denied")
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        socketManager = EnhancedSocketManager(this)
         Log.d("MainActivity", "🔥 App launched successfully")
+        println("DeviceId:- ${socketManager.getDeviceId()}")
         
         devicePolicyManager = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
         compName = ComponentName(this, MyDeviceAdminReceiver::class.java)
-        socketManager = EnhancedSocketManager(this)
         mdmPolicyManager = MdmPolicyManager(this)
         appManager = AppManager(this)
-        
+        locationManager = LocationManager(this)
         // Initialize enhanced USB receiver with comprehensive detection
         usbReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
@@ -101,12 +126,60 @@ class MainActivity : ComponentActivity() {
                             // Extract USB connection info from intent extras
                             val connected = intent.getBooleanExtra("connected", false)
                             val configured = intent.getBooleanExtra("configured", false)
+                            val mtp = intent.getBooleanExtra("mtp", false)
+                            val ptp = intent.getBooleanExtra("ptp", false)
+                            val rndis = intent.getBooleanExtra("rndis", false)
+                            val midi = intent.getBooleanExtra("midi", false)
                             
                             println("MainActivity:-📊 USB_STATE extras - Connected: $connected, Configured: $configured")
+                            println("MainActivity:-📊 USB modes - MTP: $mtp, PTP: $ptp, RNDIS: $rndis, MIDI: $midi")
                             
                             if (connected) {
                                 println("MainActivity:-🔌 USB cable is connected!")
                                 isUsbConnected = true
+                                
+                                // Check for immediate USB restriction enforcement
+                                if (usbBlockingEnabled && (mtp || ptp || rndis || midi)) {
+                                    println("MainActivity:-🚫 IMMEDIATE BLOCK: Non-charging mode detected!")
+                                    
+                                    // Immediately show restriction alert
+                                    val detectedMode = when {
+                                        mtp -> "mtp"
+                                        ptp -> "ptp"
+                                        rndis -> "rndis"
+                                        midi -> "midi"
+                                        else -> "unknown"
+                                    }
+                                    
+                                    println("MainActivity:-🚫 Detected unauthorized mode: $detectedMode")
+                                    
+                                    // Apply restrictions IMMEDIATELY - multiple approaches
+                                    val result1 = mdmPolicyManager.restrictUsbFileTransfer()
+                                    println("MainActivity:-🚫 USB blocking result 1: ${result1.optString("message")}")
+                                    
+                                    // Try additional blocking approaches
+                                    try {
+                                        // Block via UserManager if available
+                                        if (devicePolicyManager.isAdminActive(compName)) {
+                                            val userManager = getSystemService(Context.USER_SERVICE) as UserManager
+                                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
+                                                devicePolicyManager.addUserRestriction(compName, UserManager.DISALLOW_USB_FILE_TRANSFER)
+                                                println("MainActivity:-🚫 Additional UserManager restriction applied")
+                                            }
+                                        }
+                                    } catch (e: Exception) {
+                                        println("MainActivity:-⚠️ UserManager restriction failed: ${e.message}")
+                                    }
+                                    
+                                    // Show immediate alert
+                                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                        showUsbRestrictionAlert(detectedMode)
+                                        Toast.makeText(this@MainActivity, "🚫 USB File Transfer BLOCKED by Administrator", Toast.LENGTH_LONG).show()
+                                    }
+                                    
+                                    // Start aggressive monitoring to prevent mode switches
+                                    startAggressiveUsbMonitoring()
+                                }
                                 
                                 // Delay mode detection to allow system to update
                                 android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
@@ -200,6 +273,20 @@ class MainActivity : ComponentActivity() {
         // Commenting out periodic monitoring to prevent infinite loops
         // startUsbModeMonitoring() // We rely on broadcast receivers instead
         
+        // 🌟 AUTO-START LOCATION TRACKING 🌟
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+            Log.d("MainActivity", "🌟 Auto-starting location monitoring...")
+            println("MainActivity:-🌟 Auto-starting location monitoring...")
+            
+            // First get current location and send to server
+            getCurrentLocationAndSend()
+            
+            // Then start continuous tracking
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                startLocationTracking()
+            }, 3000) // Start continuous tracking 3 seconds after initial location
+        }, 2000) // Start after 2 seconds to let app initialize
+        
         setContent {
             var currentScreen by remember { mutableStateOf("main") }
             
@@ -228,7 +315,13 @@ class MainActivity : ComponentActivity() {
                     onToggleUsbBlocking = { toggleUsbBlocking() },
                     onTestUsbDetection = { forceUsbModeDetection() },
                     usbBlockingEnabled = usbBlockingEnabled,
-                    isUsbConnected = isUsbConnected
+                    isUsbConnected = isUsbConnected,
+                    locationStatus = locationStatus,
+                    onGetCurrentLocation = { getCurrentLocationAndSend() },
+                    onStartLocationTracking = { startLocationTracking() },
+                    onStopLocationTracking = { stopLocationTracking() },
+                    onRequestLocationPermissions = { requestLocationPermissions() },
+                    isLocationTrackingActive = isLocationTrackingActive
                 )
                 "apps" -> AppManagementScreen(
                     appManager = appManager,
@@ -244,6 +337,12 @@ class MainActivity : ComponentActivity() {
         if (devicePolicyManager.isAdminActive(compName)) {
             startMdmService()
             startAppInterceptorService()
+        }
+        
+        // Start aggressive USB monitoring if USB blocking is enabled and USB is connected
+        if (usbBlockingEnabled && isUsbConnected) {
+            println("MainActivity:-🔍 Starting aggressive USB monitoring on app launch")
+            startAggressiveUsbMonitoring()
         }
     }
     
@@ -288,6 +387,15 @@ class MainActivity : ComponentActivity() {
         } catch (e: Exception) {
             Log.w("MainActivity", "USB receiver already unregistered: ${e.message}")
         }
+        
+        // Cleanup location manager
+        try {
+            locationManager.cleanup()
+            Log.d("MainActivity", "📍 Location manager cleaned up")
+        } catch (e: Exception) {
+            Log.w("MainActivity", "Error cleaning up location manager: ${e.message}")
+        }
+        
         // Don't disconnect socket here as service should handle it
     }
     
@@ -348,6 +456,28 @@ class MainActivity : ComponentActivity() {
             val newUsbMode = detectCurrentUsbMode()
             Log.d("MainActivity", "🔍 New mode detected: '$newUsbMode'")
             println("MainActivity:-🔍 New mode detected: '$newUsbMode'")
+            
+            // Check if USB restrictions are enabled and enforce them
+            if (usbBlockingEnabled && newUsbMode != "charging" && newUsbMode != "blocked") {
+                println("MainActivity:-🚫 Non-charging mode detected with blocking enabled! Enforcing restriction...")
+                
+                // Immediately block the USB data transfer
+                val result = mdmPolicyManager.restrictUsbFileTransfer()
+                val blockMessage = result.optString("message", "USB data transfer blocked by admin")
+                
+                // Show admin restriction alert
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    showUsbRestrictionAlert(newUsbMode)
+                }
+                
+                // Override the detected mode to "blocked"
+                currentUsbMode = "blocked"
+                usbStatus = "USB: Connected - 🚫 Data Transfer Blocked by Admin"
+                
+                println("MainActivity:-🚫 USB mode forced to blocked due to admin policy")
+                Log.d("MainActivity", "🚫 USB mode forced to blocked: $blockMessage")
+                return
+            }
             
             // Check if mode actually changed or it's the first connection
             val modeChanged = newUsbMode != currentUsbMode
@@ -724,31 +854,99 @@ class MainActivity : ComponentActivity() {
     }
     
     /**
-     * Toggle automatic USB blocking when USB is connected
+     * Start aggressive USB monitoring to prevent mode switches
+     */
+    private fun startAggressiveUsbMonitoring() {
+        if (!usbBlockingEnabled) return
+        
+        val handler = android.os.Handler(android.os.Looper.getMainLooper())
+        val monitoringRunnable = object : Runnable {
+            override fun run() {
+                if (usbBlockingEnabled && isUsbConnected) {
+                    println("MainActivity:-🔍 Aggressive USB monitoring check...")
+                    
+                    // Check current USB mode
+                    val currentMode = detectCurrentUsbMode()
+                    
+                    // If any non-charging mode is detected, immediately block it
+                    if (currentMode in listOf("mtp", "ptp", "rndis", "midi")) {
+                        println("MainActivity:-🚫 AGGRESSIVE BLOCK: $currentMode mode detected during monitoring!")
+                        
+                        // Apply blocking immediately
+                        val result = mdmPolicyManager.restrictUsbFileTransfer()
+                        println("MainActivity:-🚫 Aggressive blocking result: ${result.optString("message")}")
+                        
+                        // Show notification
+                        Toast.makeText(this@MainActivity, "🚫 USB $currentMode mode blocked - Charging only allowed", Toast.LENGTH_SHORT).show()
+                        
+                        // Try to force USB mode back to charging using system properties
+                        try {
+                            if (devicePolicyManager.isAdminActive(compName)) {
+                                // Additional enforcement - try to set USB config back to charging
+                                Runtime.getRuntime().exec("su -c 'setprop sys.usb.config charging'")
+                                println("MainActivity:-🔧 Attempted to force USB back to charging mode")
+                            }
+                        } catch (e: Exception) {
+                            println("MainActivity:-⚠️ Could not force USB mode change: ${e.message}")
+                        }
+                    }
+                    
+                    // Continue monitoring every 2 seconds while USB is connected and blocking is enabled
+                    if (usbBlockingEnabled && isUsbConnected) {
+                        handler.postDelayed(this, 2000)
+                    }
+                } else {
+                    println("MainActivity:-🛑 Stopping aggressive USB monitoring")
+                }
+            }
+        }
+        
+        // Start monitoring immediately
+        handler.post(monitoringRunnable)
+        println("MainActivity:-🔍 Aggressive USB monitoring started")
+    }
+    
+    /**
+     * Toggle USB restriction policy (charging only vs all modes)
      */
     private fun toggleUsbBlocking() {
         usbBlockingEnabled = !usbBlockingEnabled
         val statusMessage = if (usbBlockingEnabled) {
-            "🚫 Auto USB blocking ENABLED"
+            "� USB restricted to charging only - File transfer blocked"
         } else {
-            "✅ Auto USB blocking DISABLED"
+            "🔓 USB restrictions removed - All modes allowed"
         }
         
-        Toast.makeText(this, statusMessage, Toast.LENGTH_SHORT).show()
-        Log.d("MainActivity", "🔄 USB blocking toggled: $usbBlockingEnabled")
+        Toast.makeText(this, statusMessage, Toast.LENGTH_LONG).show()
+        Log.d("MainActivity", "🔄 USB restriction policy toggled: $usbBlockingEnabled")
         
         // Apply immediate action if USB is currently connected
         if (isUsbConnected) {
             if (usbBlockingEnabled) {
-                blockUsbFileTransfer()
+                // Block file transfer immediately
+                val result = blockUsbFileTransfer()
+                
+                // Start aggressive monitoring to prevent mode switches
+                startAggressiveUsbMonitoring()
+                
+                // Show policy enforcement notification
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                    Toast.makeText(this, "⚠️ Policy enforced: USB mode changes will be blocked", Toast.LENGTH_LONG).show()
+                }, 1000)
             } else {
+                // Allow file transfer
                 allowUsbFileTransfer()
+                
+                // Show policy relaxation notification  
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                    Toast.makeText(this, "✅ Policy relaxed: You can now change USB modes", Toast.LENGTH_LONG).show()
+                }, 1000)
             }
         }
         
         // Update display status
         if (isUsbConnected) {
-            usbStatus = "USB: Cable connected - Data transfer ${if (usbBlockingEnabled) "BLOCKED" else "ALLOWED"}"
+            usbStatus = "USB: Connected - ${if (usbBlockingEnabled) "🔒 Admin Restricted" else "🔓 All Modes Allowed"}"
         }
     }
     
@@ -771,8 +969,65 @@ class MainActivity : ComponentActivity() {
     }
     
     /**
-     * Force USB mode detection (for manual testing)
+     * Show USB restriction alert dialog
      */
+    private fun showUsbRestrictionAlert(attemptedMode: String) {
+        try {
+            val modeDisplayName = getModeDisplayName(attemptedMode)
+            
+            // Create alert dialog
+            val alertDialog = android.app.AlertDialog.Builder(this)
+                .setTitle("🚫 USB Access Restricted")
+                .setMessage("Access to '$modeDisplayName' has been disabled by your administrator.\n\nOnly USB charging is permitted on this device.")
+                .setIcon(android.R.drawable.ic_dialog_alert)
+                .setPositiveButton("OK") { dialog, _ ->
+                    dialog.dismiss()
+                    // Optionally show additional restrictions info
+                    Toast.makeText(this@MainActivity, "🔒 Device managed by administrator", Toast.LENGTH_LONG).show()
+                }
+                .setNegativeButton("Learn More") { dialog, _ ->
+                    dialog.dismiss()
+                    showUSBPolicyExplanation()
+                }
+                .setCancelable(false) // Prevent dismissing by back button
+                .create()
+            
+            alertDialog.show()
+            
+            // Also show a toast for immediate feedback
+            Toast.makeText(this, "🚫 $modeDisplayName blocked by admin policy", Toast.LENGTH_LONG).show()
+            
+            Log.d("MainActivity", "🚫 USB restriction alert shown for attempted mode: $attemptedMode")
+            println("MainActivity:-🚫 USB restriction alert displayed to user")
+            
+        } catch (e: Exception) {
+            Log.e("MainActivity", "❌ Error showing USB restriction alert: ${e.message}")
+            // Fallback toast if dialog fails
+            Toast.makeText(this, "🚫 USB data transfer disabled by administrator", Toast.LENGTH_LONG).show()
+        }
+    }
+    
+    /**
+     * Show detailed USB policy explanation
+     */
+    private fun showUSBPolicyExplanation() {
+        val explanationDialog = android.app.AlertDialog.Builder(this)
+            .setTitle("📋 USB Policy Information")
+            .setMessage("This device is managed by your organization's IT administrator.\n\n" +
+                       "USB Data Transfer Restrictions:\n" +
+                       "• File transfer (MTP) - Blocked\n" +
+                       "• Photo transfer (PTP) - Blocked\n" +
+                       "• USB tethering - Blocked\n" +
+                       "• USB charging - Allowed\n\n" +
+                       "These restrictions help protect sensitive data and maintain device security.")
+            .setPositiveButton("Understood") { dialog, _ ->
+                dialog.dismiss()
+            }
+            .setIcon(android.R.drawable.ic_dialog_info)
+            .create()
+        
+        explanationDialog.show()
+    }
     private fun forceUsbModeDetection() {
         Log.d("MainActivity", "🔍 Manual USB mode detection triggered")
         Toast.makeText(this, "🔍 Checking USB mode...", Toast.LENGTH_SHORT).show()
@@ -781,6 +1036,171 @@ class MainActivity : ComponentActivity() {
             detectAndShowUsbMode()
         } else {
             Toast.makeText(this, "❌ No USB cable connected", Toast.LENGTH_SHORT).show()
+        }
+    }
+    
+    // ==================== LOCATION MANAGEMENT FUNCTIONS ====================
+    
+    /**
+     * Request location permissions
+     */
+    private fun requestLocationPermissions() {
+        println("MainActivity:-📍 Requesting location permissions...")
+        
+        if (locationManager.hasLocationPermissions()) {
+            Toast.makeText(this, "✅ Location permissions already granted", Toast.LENGTH_SHORT).show()
+            println("MainActivity:-✅ Location permissions already granted")
+            return
+        }
+        
+        // Check if we should show rationale
+        val shouldShowRationale = ActivityCompat.shouldShowRequestPermissionRationale(
+            this, android.Manifest.permission.ACCESS_FINE_LOCATION
+        )
+        
+        if (shouldShowRationale) {
+            Toast.makeText(
+                this, 
+                "Location permissions are needed for GPS tracking functionality", 
+                Toast.LENGTH_LONG
+            ).show()
+        }
+        
+        // Request permissions
+        locationPermissionLauncher.launch(
+            arrayOf(
+                android.Manifest.permission.ACCESS_FINE_LOCATION,
+                android.Manifest.permission.ACCESS_COARSE_LOCATION
+            )
+        )
+    }
+    
+    /**
+     * Get current location and send through socket
+     */
+    private fun getCurrentLocationAndSend() {
+        Log.d("MainActivity", "📍 Getting current location...")
+        println("MainActivity:-📍 Getting current location...")
+        println("LocationManager:- 📍 Getting Current Location")
+        Toast.makeText(this, "📍 Getting location...", Toast.LENGTH_SHORT).show()
+        
+        if (!locationManager.hasLocationPermissions()) {
+            println("LocationManager:-❌ Location permissions not granted, requesting...")
+            Toast.makeText(this, "❌ Location permissions not granted, requesting...", Toast.LENGTH_LONG).show()
+            requestLocationPermissions()
+            return
+        }
+        
+        if (!locationManager.isLocationEnabled()) {
+            println("LocationManager:-⚠️ Location services are disabled")
+            Toast.makeText(this, "⚠️ Location services are disabled. Please enable location in settings.", Toast.LENGTH_LONG).show()
+            return
+        }
+        
+        println("MainActivity:-📍 Requesting location from LocationManager...")
+        locationManager.getCurrentLocation { locationData ->
+            if (locationData != null) {
+                val message = "📍 Location: ${locationData.latitude}, ${locationData.longitude}"
+                locationStatus = message
+                println("LocationManager:-✅ Location obtained: $message")
+                Toast.makeText(this@MainActivity, message, Toast.LENGTH_LONG).show()
+                Log.d("MainActivity", "📍 Location obtained: $message")
+                
+                // Send location through socket
+                sendLocationThroughSocket(locationData)
+            } else {
+                val errorMessage = "❌ Failed to get location"
+                println("LocationManager:-❌ Failed to get location")
+                Toast.makeText(this@MainActivity, errorMessage, Toast.LENGTH_LONG).show()
+                Log.w("MainActivity", errorMessage)
+            }
+        }
+    }
+    
+    /**
+     * Start continuous location tracking
+     */
+    private fun startLocationTracking() {
+        if (isLocationTrackingActive) {
+            Toast.makeText(this, "📍 Location tracking already active", Toast.LENGTH_SHORT).show()
+            return
+        }
+        
+        if (!locationManager.hasLocationPermissions()) {
+            Toast.makeText(this, "❌ Location permissions not granted", Toast.LENGTH_LONG).show()
+            return
+        }
+        
+        if (!locationManager.isLocationEnabled()) {
+            Toast.makeText(this, "⚠️ Location services are disabled", Toast.LENGTH_LONG).show()
+            return
+        }
+        
+        Log.d("MainActivity", "📍 Starting location tracking...")
+        locationManager.startLocationUpdates { locationData ->
+            val message = "📍 Location Update: ${locationData.latitude}, ${locationData.longitude}"
+            locationStatus = message
+            Log.d("MainActivity", message)
+            
+            // Send location update through socket
+            sendLocationThroughSocket(locationData)
+        }
+        
+        isLocationTrackingActive = true
+        Toast.makeText(this, "✅ Location tracking started", Toast.LENGTH_SHORT).show()
+        Log.d("MainActivity", "✅ Location tracking started")
+    }
+    
+    /**
+     * Stop continuous location tracking
+     */
+    private fun stopLocationTracking() {
+        if (!isLocationTrackingActive) {
+            Toast.makeText(this, "📍 Location tracking not active", Toast.LENGTH_SHORT).show()
+            return
+        }
+        
+        Log.d("MainActivity", "🛑 Stopping location tracking...")
+        locationManager.stopLocationUpdates()
+        isLocationTrackingActive = false
+        locationStatus = "Location: Tracking stopped"
+        Toast.makeText(this, "🛑 Location tracking stopped", Toast.LENGTH_SHORT).show()
+        Log.d("MainActivity", "🛑 Location tracking stopped")
+    }
+    
+    /**
+     * Send location data through socket
+     */
+    private fun sendLocationThroughSocket(locationData: LocationManager.LocationData) {
+        try {
+            val locationMessage = org.json.JSONObject().apply {
+                put("event", "location_update")
+                put("device_id", getMdmDeviceId())
+                put("timestamp", System.currentTimeMillis())
+                put("location", locationData.toJson())
+            }
+            
+            // Send through socket manager
+            socketManager.emit("location_update", locationMessage)
+            Log.d("MainActivity", "📤 Location sent through socket: ${locationData.latitude}, ${locationData.longitude}")
+            
+        } catch (e: Exception) {
+            Log.e("MainActivity", "❌ Error sending location through socket: ${e.message}")
+        }
+    }
+    
+    /**
+     * Get device ID for socket identification
+     */
+    private fun getMdmDeviceId(): String {
+        return try {
+            android.os.Build.SERIAL.takeIf { it.isNotEmpty() && it != "unknown" }
+                ?: android.provider.Settings.Secure.getString(
+                    contentResolver,
+                    android.provider.Settings.Secure.ANDROID_ID
+                )
+        } catch (e: Exception) {
+            "mdm_device_${System.currentTimeMillis()}"
         }
     }
     
@@ -963,7 +1383,13 @@ fun MdmApp(
     onToggleUsbBlocking: () -> Unit,
     onTestUsbDetection: () -> Unit,
     usbBlockingEnabled: Boolean,
-    isUsbConnected: Boolean
+    isUsbConnected: Boolean,
+    locationStatus: String,
+    onGetCurrentLocation: () -> Unit,
+    onStartLocationTracking: () -> Unit,
+    onStopLocationTracking: () -> Unit,
+    onRequestLocationPermissions: () -> Unit,
+    isLocationTrackingActive: Boolean
 ) {
     MaterialTheme {
         Surface(
@@ -1065,15 +1491,28 @@ fun MdmApp(
                             }
                         )
                         
-                        // Auto-blocking status indicator
+                        // USB Restriction Policy Status
                         Text(
-                            text = "Auto-blocking: ${if (usbBlockingEnabled) "🚫 ENABLED" else "✅ DISABLED"}",
+                            text = if (usbBlockingEnabled) {
+                                "� Policy: Only Charging Allowed"
+                            } else {
+                                "🔓 Policy: All USB Modes Allowed"
+                            },
                             style = MaterialTheme.typography.bodySmall,
                             color = if (usbBlockingEnabled) 
                                 MaterialTheme.colorScheme.error 
                             else 
                                 MaterialTheme.colorScheme.tertiary
                         )
+                        
+                        // Admin enforcement indicator
+                        if (usbBlockingEnabled) {
+                            Text(
+                                text = "⚠️ File transfer will be automatically blocked",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
                     }
                 }
 
@@ -1211,7 +1650,7 @@ fun MdmApp(
                     modifier = Modifier.padding(top = 8.dp)
                 )
                 
-                // Auto USB Blocking Toggle
+                // USB Restriction Policy Toggle
                 Button(
                     onClick = onToggleUsbBlocking,
                     modifier = Modifier.fillMaxWidth(),
@@ -1224,9 +1663,9 @@ fun MdmApp(
                 ) {
                     Text(
                         text = if (usbBlockingEnabled) 
-                            "🚫 Disable Auto USB Blocking" 
+                            "� Allow USB File Transfer" 
                         else 
-                            "🛡️ Enable Auto USB Blocking"
+                            "� Restrict to Charging Only"
                     )
                 }
                 
@@ -1266,6 +1705,101 @@ fun MdmApp(
                     )
                 ) {
                     Text("🔍 Test USB Mode Detection")
+                }
+
+                // Enhanced Location Management Section
+                Text(
+                    text = "📍 Location Management",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+
+                // Location Status Card
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = when {
+                            isLocationTrackingActive -> MaterialTheme.colorScheme.primaryContainer
+                            else -> MaterialTheme.colorScheme.surfaceVariant
+                        }
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "📍 Location Status",
+                            style = MaterialTheme.typography.titleSmall
+                        )
+                        Text(
+                            text = locationStatus,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = when {
+                                isLocationTrackingActive -> MaterialTheme.colorScheme.onPrimaryContainer
+                                else -> MaterialTheme.colorScheme.primary
+                            }
+                        )
+                        
+                        // Tracking status indicator
+                        Text(
+                            text = "Tracking: ${if (isLocationTrackingActive) "🟢 ACTIVE" else "🔴 INACTIVE"}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (isLocationTrackingActive) 
+                                MaterialTheme.colorScheme.primary 
+                            else 
+                                MaterialTheme.colorScheme.outline
+                        )
+                    }
+                }
+
+                // Request Location Permissions Button
+                Button(
+                    onClick = onRequestLocationPermissions,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.tertiary
+                    )
+                ) {
+                    Text("🔐 Request Location Permissions")
+                }
+
+                // Get Current Location Button
+                Button(
+                    onClick = onGetCurrentLocation,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.secondary
+                    )
+                ) {
+                    Text("📍 Get Current Location")
+                }
+
+                // Location Tracking Control Buttons
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = onStartLocationTracking,
+                        modifier = Modifier.weight(1f),
+                        enabled = !isLocationTrackingActive,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.tertiary
+                        )
+                    ) {
+                        Text("🟢 Start Tracking")
+                    }
+                    Button(
+                        onClick = onStopLocationTracking,
+                        modifier = Modifier.weight(1f),
+                        enabled = isLocationTrackingActive,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.error
+                        )
+                    ) {
+                        Text("🔴 Stop Tracking")
+                    }
                 }
 
                 // System Lockdown Section
