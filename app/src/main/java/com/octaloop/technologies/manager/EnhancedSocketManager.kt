@@ -506,7 +506,7 @@ class EnhancedSocketManager(private val context: Context) {
             val command = data.optString("command", data.optString("action"))
             println("SocketManager:- 🎯 Processing command: $command")
 
-            val result = when (command) {
+            val result: JSONObject = when (command) {
                 "lock" -> {
                     print("Locking the device")
                     Log.d("SocketManager", "🔒 Lock command received")
@@ -532,27 +532,63 @@ class EnhancedSocketManager(private val context: Context) {
                 "wipe" -> {
                     Log.d("SocketManager", "💥 Wipe command received")
                     val includeExternal = data.optBoolean("include_external", false)
-                    mdmPolicyManager.wipeDevice(includeExternal)
+                    val wipeResult = mdmPolicyManager.wipeDevice(includeExternal)
+                    wipeResult ?: JSONObject().apply {
+                        put("command", "wipe")
+                        put("status", "success")
+                        put("message", "Device wipe initiated")
+                        put("timestamp", System.currentTimeMillis())
+                        put("device_id", getDeviceId())
+                        put("include_external", includeExternal)
+                    }
                 }
 
                 "block_installation" -> {
                     Log.d("SocketManager", "🚫 Block installation command received")
-                    mdmPolicyManager.blockAppInstallation()
+                    val blockResult = mdmPolicyManager.blockAppInstallation()
+                    blockResult ?: JSONObject().apply {
+                        put("command", "block_installation")
+                        put("status", "success")
+                        put("message", "App installation blocked")
+                        put("timestamp", System.currentTimeMillis())
+                        put("device_id", getDeviceId())
+                    }
                 }
 
                 "allow_installation" -> {
                     Log.d("SocketManager", "✅ Allow installation command received")
-                    mdmPolicyManager.allowAppInstallation()
+                    val allowResult = mdmPolicyManager.allowAppInstallation()
+                    allowResult ?: JSONObject().apply {
+                        put("command", "allow_installation")
+                        put("status", "success")
+                        put("message", "App installation allowed")
+                        put("timestamp", System.currentTimeMillis())
+                        put("device_id", getDeviceId())
+                    }
                 }
 
                 "disable_camera" -> {
                     Log.d("SocketManager", "📷 Disable camera command received")
-                    mdmPolicyManager.disableCamera()
+                    val disableResult = mdmPolicyManager.disableCamera()
+                    disableResult ?: JSONObject().apply {
+                        put("command", "disable_camera")
+                        put("status", "success")
+                        put("message", "Camera disabled")
+                        put("timestamp", System.currentTimeMillis())
+                        put("device_id", getDeviceId())
+                    }
                 }
 
                 "enable_camera" -> {
                     Log.d("SocketManager", "📹 Enable camera command received")
-                    mdmPolicyManager.enableCamera()
+                    val enableResult = mdmPolicyManager.enableCamera()
+                    enableResult ?: JSONObject().apply {
+                        put("command", "enable_camera")
+                        put("status", "success")
+                        put("message", "Camera enabled")
+                        put("timestamp", System.currentTimeMillis())
+                        put("device_id", getDeviceId())
+                    }
                 }
 
                 "set_password_policy" -> {
@@ -560,7 +596,17 @@ class EnhancedSocketManager(private val context: Context) {
                     val minLength = data.optInt("min_length", 8)
                     val requireNumbers = data.optBoolean("require_numbers", true)
                     val requireSymbols = data.optBoolean("require_symbols", true)
-                    mdmPolicyManager.setPasswordPolicy(minLength, requireNumbers, requireSymbols)
+                    val policyResult = mdmPolicyManager.setPasswordPolicy(minLength, requireNumbers, requireSymbols)
+                    policyResult ?: JSONObject().apply {
+                        put("command", "set_password_policy")
+                        put("status", "success")
+                        put("message", "Password policy set")
+                        put("timestamp", System.currentTimeMillis())
+                        put("device_id", getDeviceId())
+                        put("min_length", minLength)
+                        put("require_numbers", requireNumbers)
+                        put("require_symbols", requireSymbols)
+                    }
                 }
 
                 "get_device_info" -> {
@@ -580,37 +626,87 @@ class EnhancedSocketManager(private val context: Context) {
                     restrictionsData?.keys()?.forEach { key ->
                         restrictions[key] = restrictionsData.getBoolean(key)
                     }
-                    mdmPolicyManager.setSystemRestrictions(restrictions)
+                    val restrictionsResult = mdmPolicyManager.setSystemRestrictions(restrictions)
+                    restrictionsResult ?: JSONObject().apply {
+                        put("command", "set_system_restrictions")
+                        put("status", "success")
+                        put("message", "System restrictions set")
+                        put("timestamp", System.currentTimeMillis())
+                        put("device_id", getDeviceId())
+                        put("restrictions_count", restrictions.size)
+                    }
                 }
 
                 "apply_lockdown" -> {
                     Log.d("SocketManager", "🔒 Apply system lockdown command received")
-                    mdmPolicyManager.applySystemLockdown()
+                    val lockdownResult = mdmPolicyManager.applySystemLockdown()
+                    lockdownResult ?: JSONObject().apply {
+                        put("command", "apply_lockdown")
+                        put("status", "success")
+                        put("message", "System lockdown applied")
+                        put("timestamp", System.currentTimeMillis())
+                        put("device_id", getDeviceId())
+                    }
                 }
 
                 "remove_lockdown" -> {
                     Log.d("SocketManager", "🔓 Remove system lockdown command received")
-                    mdmPolicyManager.removeSystemLockdown()
+                    val removeLockdownResult = mdmPolicyManager.removeSystemLockdown()
+                    removeLockdownResult ?: JSONObject().apply {
+                        put("command", "remove_lockdown")
+                        put("status", "success")
+                        put("message", "System lockdown removed")
+                        put("timestamp", System.currentTimeMillis())
+                        put("device_id", getDeviceId())
+                    }
                 }
 
                 "block_categories" -> {
                     Log.d("SocketManager", "🚫 Block app categories command received")
-                    mdmPolicyManager.blockAppCategories()
+                    val blockCategoriesResult = mdmPolicyManager.blockAppCategories()
+                    blockCategoriesResult ?: JSONObject().apply {
+                        put("command", "block_categories")
+                        put("status", "success")
+                        put("message", "App categories blocked")
+                        put("timestamp", System.currentTimeMillis())
+                        put("device_id", getDeviceId())
+                    }
                 }
 
                 "unblock_categories" -> {
                     Log.d("SocketManager", "✅ Unblock app categories command received")
-                    mdmPolicyManager.unblockAppCategories()
+                    val unblockCategoriesResult = mdmPolicyManager.unblockAppCategories()
+                    unblockCategoriesResult ?: JSONObject().apply {
+                        put("command", "unblock_categories")
+                        put("status", "success")
+                        put("message", "App categories unblocked")
+                        put("timestamp", System.currentTimeMillis())
+                        put("device_id", getDeviceId())
+                    }
                 }
 
                 "disable_content_creation" -> {
                     Log.d("SocketManager", "✏️❌ Disable content creation command received")
-                    mdmPolicyManager.disableContentCreation()
+                    val disableContentResult = mdmPolicyManager.disableContentCreation()
+                    disableContentResult ?: JSONObject().apply {
+                        put("command", "disable_content_creation")
+                        put("status", "success")
+                        put("message", "Content creation disabled")
+                        put("timestamp", System.currentTimeMillis())
+                        put("device_id", getDeviceId())
+                    }
                 }
 
                 "enable_content_creation" -> {
                     Log.d("SocketManager", "✏️✅ Enable content creation command received")
-                    mdmPolicyManager.enableContentCreation()
+                    val enableContentResult = mdmPolicyManager.enableContentCreation()
+                    enableContentResult ?: JSONObject().apply {
+                        put("command", "enable_content_creation")
+                        put("status", "success")
+                        put("message", "Content creation enabled")
+                        put("timestamp", System.currentTimeMillis())
+                        put("device_id", getDeviceId())
+                    }
                 }
 
                 "block_apps" -> {
@@ -622,7 +718,15 @@ class EnhancedSocketManager(private val context: Context) {
                             packages.add(packagesArray.getString(i))
                         }
                     }
-                    mdmPolicyManager.setAppBlacklist(packages, true)
+                    val blockAppsResult = mdmPolicyManager.setAppBlacklist(packages, true)
+                    blockAppsResult ?: JSONObject().apply {
+                        put("command", "block_apps")
+                        put("status", "success")
+                        put("message", "Apps blocked")
+                        put("timestamp", System.currentTimeMillis())
+                        put("device_id", getDeviceId())
+                        put("packages_count", packages.size)
+                    }
                 }
 
                 "allow_apps" -> {
@@ -634,65 +738,87 @@ class EnhancedSocketManager(private val context: Context) {
                             packages.add(packagesArray.getString(i))
                         }
                     }
-                    mdmPolicyManager.setAppBlacklist(packages, false)
+                    val allowAppsResult = mdmPolicyManager.setAppBlacklist(packages, false)
+                    allowAppsResult ?: JSONObject().apply {
+                        put("command", "allow_apps")
+                        put("status", "success")
+                        put("message", "Apps allowed")
+                        put("timestamp", System.currentTimeMillis())
+                        put("device_id", getDeviceId())
+                        put("packages_count", packages.size)
+                    }
                 }
 
                 "restrict_usb" -> {
                     Log.d("SocketManager", "🚫 Restrict USB command received")
-                    mdmPolicyManager.restrictUsbFileTransfer()
+                    val restrictResult = mdmPolicyManager.restrictUsbFileTransfer()
+                    restrictResult ?: JSONObject().apply {
+                        put("command", "restrict_usb")
+                        put("status", "success")
+                        put("message", "USB restricted")
+                        put("timestamp", System.currentTimeMillis())
+                        put("device_id", getDeviceId())
+                    }
                 }
 
                 "allow_usb" -> {
                     Log.d("SocketManager", "✅ Allow USB command received")
-                    mdmPolicyManager.allowUsbFileTransfer()
+                    val allowResult = mdmPolicyManager.allowUsbFileTransfer()
+                    allowResult ?: JSONObject().apply {
+                        put("command", "allow_usb")
+                        put("status", "success")
+                        put("message", "USB allowed")
+                        put("timestamp", System.currentTimeMillis())
+                        put("device_id", getDeviceId())
+                    }
                 }
 
                 "block_usb_file_transfer" -> {
                     Log.d("SocketManager", "🚫 Block USB file transfer command received")
-                    mdmPolicyManager.restrictUsbFileTransfer()
-
-                    // Also emit device_location event
-                    val result = JSONObject()
-                    JSONObject().apply {
+                    val blockUsbResult = mdmPolicyManager.restrictUsbFileTransfer()
+                    
+                    val result = JSONObject().apply {
                         put("device_id", getDeviceId())
                         put("timestamp", System.currentTimeMillis())
                         put("command", "block_usb_file_transfer")
                         put("status", "success")
-                        put("message", "File transfer Blocked successfully")
+                        put("message", "File transfer blocked successfully")
                     }
-                    emit("block_usb_file_transfer",result)
+                    emit("block_usb_file_transfer", result)
+                    
+                    blockUsbResult ?: result
                 }
 
                 "allow_usb_file_transfer" -> {
                     Log.d("SocketManager", "✅ Allow USB file transfer command received")
-                    mdmPolicyManager.allowUsbFileTransfer()
-
-                    // Also emit device_location event
-                    val result = JSONObject()
-                    JSONObject().apply {
+                    val allowUsbResult = mdmPolicyManager.allowUsbFileTransfer()
+                    
+                    val result = JSONObject().apply {
                         put("device_id", getDeviceId())
                         put("timestamp", System.currentTimeMillis())
                         put("command", "allow_usb_file_transfer")
                         put("status", "success")
-                        put("message", "File transfer un blocked successfully")
+                        put("message", "File transfer unblocked successfully")
                     }
-                    emit("allow_usb_file_transfer",result)
+                    emit("allow_usb_file_transfer", result)
+                    
+                    allowUsbResult ?: result
                 }
 
                 "get_usb_status" -> {
                     Log.d("SocketManager", "📊 Get USB status command received")
-                    mdmPolicyManager.getUsbFileTransferStatus()
-
-                    // Also emit device_location event
-                    val result = JSONObject()
-                    JSONObject().apply {
+                    val usbStatusResult = mdmPolicyManager.getUsbFileTransferStatus()
+                    
+                    val result = JSONObject().apply {
                         put("device_id", getDeviceId())
                         put("timestamp", System.currentTimeMillis())
                         put("command", "get_usb_status")
                         put("status", "success")
-                        put("message", "Usb Status got successfully")
+                        put("message", "USB status retrieved successfully")
                     }
-                    emit("get_usb_status",result)
+                    emit("get_usb_status", result)
+                    
+                    usbStatusResult ?: result
                 }
 
                 "ping" -> {
