@@ -531,6 +531,7 @@ class EnhancedSocketManager(private val context: Context) {
             put("remote_control")
             put("content_restriction")
             put("system_lockdown")
+            put("take_screenshot")
         }
     }
 
@@ -1018,6 +1019,12 @@ class EnhancedSocketManager(private val context: Context) {
                     }
                 }
 
+                "take_screenshot" -> {
+                    Log.d("SocketManager", "📸 Take screenshot command received")
+                    val screenshotResult = takeScreenshot()
+                    screenshotResult
+                }
+
                 else -> {
                     Log.w("SocketManager", "⚠️ Unknown command: $command")
                     JSONObject().apply {
@@ -1118,6 +1125,123 @@ class EnhancedSocketManager(private val context: Context) {
             JSONObject().apply {
                 put("error", "Unable to get storage info")
             }
+        }
+    }
+    
+    /**
+     * Take a screenshot of the device
+     */
+    private fun takeScreenshot(): JSONObject {
+        return try {
+            Log.d("SocketManager", "📸 Starting screenshot capture")
+            
+            // Check if we have the required permission (API 21+)
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
+                
+                // Create screenshot file
+                val timestamp = System.currentTimeMillis()
+                val fileName = "screenshot_${timestamp}.png"
+                val screenshotDir = java.io.File(context.getExternalFilesDir(null), "screenshots")
+                
+                // Create directory if it doesn't exist
+                if (!screenshotDir.exists()) {
+                    screenshotDir.mkdirs()
+                }
+                
+                val screenshotFile = java.io.File(screenshotDir, fileName)
+                val screenshotPath = screenshotFile.absolutePath
+                
+                // Use shell command to take screenshot (requires root or system app)
+                val screenshotSuccess = captureScreenshotUsingShell(screenshotPath)
+                
+                if (screenshotSuccess) {
+                    val fileUrl = "file://$screenshotPath"
+                    Log.d("SocketManager", "✅ Screenshot saved: $fileUrl")
+                    println("SocketManager: 📸 Screenshot URL: $fileUrl")
+                    
+                    JSONObject().apply {
+                        put("command", "take_screenshot")
+                        put("status", "success")
+                        put("message", "Screenshot captured successfully")
+                        put("timestamp", System.currentTimeMillis())
+                        put("device_id", getDeviceId())
+                        put("screenshot_url", fileUrl)
+                        put("screenshot_path", screenshotPath)
+                        put("file_name", fileName)
+                        put("file_size", screenshotFile.length())
+                        put("capture_timestamp", timestamp)
+                    }
+                } else {
+                    Log.w("SocketManager", "⚠️ Screenshot capture failed")
+                    
+                    JSONObject().apply {
+                        put("command", "take_screenshot")
+                        put("status", "error")
+                        put("message", "Screenshot capture failed - may require root or system permissions")
+                        put("timestamp", System.currentTimeMillis())
+                        put("device_id", getDeviceId())
+                        put("attempted_path", screenshotPath)
+                    }
+                }
+            } else {
+                Log.w("SocketManager", "⚠️ Screenshot not supported on API level ${android.os.Build.VERSION.SDK_INT}")
+                
+                JSONObject().apply {
+                    put("command", "take_screenshot")
+                    put("status", "error")
+                    put("message", "Screenshot not supported on this Android version")
+                    put("timestamp", System.currentTimeMillis())
+                    put("device_id", getDeviceId())
+                    put("api_level", android.os.Build.VERSION.SDK_INT)
+                    put("min_required_api", 21)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("SocketManager", "❌ Error taking screenshot: ${e.message}")
+            
+            JSONObject().apply {
+                put("command", "take_screenshot")
+                put("status", "error")
+                put("message", "Error taking screenshot: ${e.message}")
+                put("timestamp", System.currentTimeMillis())
+                put("device_id", getDeviceId())
+                put("error_type", e.javaClass.simpleName)
+            }
+        }
+    }
+    
+    /**
+     * Capture screenshot using shell command
+     */
+    private fun captureScreenshotUsingShell(outputPath: String): Boolean {
+        return try {
+            // Try screencap command (most common)
+            val process = Runtime.getRuntime().exec("screencap -p $outputPath")
+            val exitCode = process.waitFor()
+            
+            if (exitCode == 0) {
+                Log.d("SocketManager", "✅ Screenshot captured using screencap")
+                return true
+            }
+            
+            // If screencap fails, try alternative method
+            Log.w("SocketManager", "⚠️ screencap failed (exit code: $exitCode), trying alternative")
+            
+            // Try alternative screenshot command
+            val altProcess = Runtime.getRuntime().exec("su -c 'screencap -p $outputPath'")
+            val altExitCode = altProcess.waitFor()
+            
+            if (altExitCode == 0) {
+                Log.d("SocketManager", "✅ Screenshot captured using su screencap")
+                return true
+            }
+            
+            Log.e("SocketManager", "❌ Both screenshot methods failed")
+            false
+            
+        } catch (e: Exception) {
+            Log.e("SocketManager", "❌ Error executing screenshot command: ${e.message}")
+            false
         }
     }
 }
