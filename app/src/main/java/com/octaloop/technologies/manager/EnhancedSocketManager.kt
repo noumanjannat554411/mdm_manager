@@ -447,6 +447,37 @@ class EnhancedSocketManager(private val context: Context) {
                 put("connection_timestamp", System.currentTimeMillis())
                 put("network_type", NetworkUtils.getNetworkType(context))
                 
+                // USB File Transfer Status
+                try {
+                    val usbStatus = mdmPolicyManager.getUsbFileTransferStatus()
+                    val isUsbBlocked = usbStatus.optBoolean("is_restricted", false)
+                    put("usb_file_transfer_status", if (isUsbBlocked) "blocked" else "allowed")
+                    put("usb_file_transfer_blocked", isUsbBlocked)
+                    put("usb_status_details", usbStatus)
+                } catch (e: Exception) {
+                    Log.w("SocketManager", "Could not get USB status: ${e.message}")
+                    put("usb_file_transfer_status", "unknown")
+                    put("usb_file_transfer_blocked", false)
+                }
+                
+                // App Installation Status  
+                try {
+                    // Check if installation is blocked by checking user restrictions
+                    val userManager = context.getSystemService(Context.USER_SERVICE) as android.os.UserManager
+                    val isInstallationBlocked = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
+                        userManager.hasUserRestriction(android.os.UserManager.DISALLOW_INSTALL_APPS)
+                    } else {
+                        false
+                    }
+                    put("app_installation_status", if (isInstallationBlocked) "blocked" else "allowed")
+                    put("app_installation_blocked", isInstallationBlocked)
+                    put("installation_api_level", android.os.Build.VERSION.SDK_INT)
+                } catch (e: Exception) {
+                    Log.w("SocketManager", "Could not get installation status: ${e.message}")
+                    put("app_installation_status", "unknown")
+                    put("app_installation_blocked", false)
+                }
+                
                 // Device capabilities
                 put("capabilities", getDeviceCapabilities())
                 
@@ -464,10 +495,12 @@ class EnhancedSocketManager(private val context: Context) {
                     Log.w("SocketManager", "Could not get carrier info: ${e.message}")
                 }
             }
-            
+            println("SocketManager:-Register Device Payload is $payload")
             emit("register_device", payload)
             Log.d("SocketManager", "📤 Enhanced device registration sent for deviceId: $deviceId")
             Log.d("SocketManager", "📋 Registration payload size: ${payload.toString().length} characters")
+            Log.d("SocketManager", "🔒 USB Status: ${payload.optString("usb_file_transfer_status", "unknown")}")
+            Log.d("SocketManager", "📱 Installation Status: ${payload.optString("app_installation_status", "unknown")}")
         } catch (e: Exception) {
             Log.e("SocketManager", "Error sending device registration: ${e.message}")
         }
