@@ -93,6 +93,7 @@ class EnhancedSocketManager(private val context: Context) {
             on(Socket.EVENT_CONNECT) {
                 isConnecting = false
                 Log.d("SocketManager", "✅ Connected successfully to server")
+                println("SocketManagerConnected:-✅ Connected successfully to server")
                 // Wait a bit before sending registration to ensure connection is stable
                 android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
                     sendDeviceRegistration()
@@ -114,7 +115,11 @@ class EnhancedSocketManager(private val context: Context) {
 
             on("reconnect") {
                 Log.d("SocketManager", "🔄 Reconnected to server")
-                sendDeviceRegistration()
+                try {
+                    sendDeviceRegistration()
+                } catch (e: Exception) {
+                    TODO("Not yet implemented")
+                }
             }
 
             on("reconnect_error") { args ->
@@ -345,6 +350,7 @@ class EnhancedSocketManager(private val context: Context) {
                     try {
                         val data = args[0] as JSONObject
                         Log.d("SocketManager", "📋 Command received: $data")
+                        println("SocketManager:- 📋 Command received: $data")
                         handleCommand(data)
                     } catch (e: Exception) {
                         Log.e("SocketManager", "Error handling command: ${e.message}")
@@ -352,6 +358,16 @@ class EnhancedSocketManager(private val context: Context) {
                 }
             }
 
+            on("location_update") { args ->
+                if (args.isNotEmpty()) {
+                    try {
+                        val data = args[0] as JSONObject
+                        println("SocketManager:- The data from server is $data")
+                    } catch (e: Exception) {
+                        Log.e("SocketManager", "Error parsing welcome message: ${e.message}")
+                    }
+                }
+            }
             // Handle bulk commands
             on("bulk_commands") { args ->
                 if (args.isNotEmpty()) {
@@ -382,9 +398,12 @@ class EnhancedSocketManager(private val context: Context) {
     fun emit(event: String, data: JSONObject) {
         try {
             if (socket?.connected() == true) {
+                println("SocketManager:- Event to emit $event and data is $data")
                 socket?.emit(event, data)
+                println("SocketManager:- Event to emit $event has been emitted")
                 Log.d("SocketManager", "📤 Emitted '$event': $data")
             } else {
+                println("SocketManager:- Socket is not connected")
                 Log.w("SocketManager", "⚠️ Cannot emit '$event' - socket not connected")
             }
         } catch (e: Exception) {
@@ -485,7 +504,7 @@ class EnhancedSocketManager(private val context: Context) {
     private fun handleCommand(data: JSONObject) {
         try {
             val command = data.optString("command", data.optString("action"))
-            Log.d("SocketManager", "🎯 Processing command: $command")
+            println("SocketManager:- 🎯 Processing command: $command")
 
             val result = when (command) {
                 "lock" -> {
@@ -628,9 +647,52 @@ class EnhancedSocketManager(private val context: Context) {
                     mdmPolicyManager.allowUsbFileTransfer()
                 }
 
+                "block_usb_file_transfer" -> {
+                    Log.d("SocketManager", "🚫 Block USB file transfer command received")
+                    mdmPolicyManager.restrictUsbFileTransfer()
+
+                    // Also emit device_location event
+                    val result = JSONObject()
+                    JSONObject().apply {
+                        put("device_id", getDeviceId())
+                        put("timestamp", System.currentTimeMillis())
+                        put("command", "block_usb_file_transfer")
+                        put("status", "success")
+                        put("message", "File transfer Blocked successfully")
+                    }
+                    emit("block_usb_file_transfer",result)
+                }
+
+                "allow_usb_file_transfer" -> {
+                    Log.d("SocketManager", "✅ Allow USB file transfer command received")
+                    mdmPolicyManager.allowUsbFileTransfer()
+
+                    // Also emit device_location event
+                    val result = JSONObject()
+                    JSONObject().apply {
+                        put("device_id", getDeviceId())
+                        put("timestamp", System.currentTimeMillis())
+                        put("command", "allow_usb_file_transfer")
+                        put("status", "success")
+                        put("message", "File transfer un blocked successfully")
+                    }
+                    emit("allow_usb_file_transfer",result)
+                }
+
                 "get_usb_status" -> {
                     Log.d("SocketManager", "📊 Get USB status command received")
                     mdmPolicyManager.getUsbFileTransferStatus()
+
+                    // Also emit device_location event
+                    val result = JSONObject()
+                    JSONObject().apply {
+                        put("device_id", getDeviceId())
+                        put("timestamp", System.currentTimeMillis())
+                        put("command", "get_usb_status")
+                        put("status", "success")
+                        put("message", "Usb Status got successfully")
+                    }
+                    emit("get_usb_status",result)
                 }
 
                 "ping" -> {
@@ -666,10 +728,13 @@ class EnhancedSocketManager(private val context: Context) {
                 }
 
                 "get_location" -> {
-                    Log.d("SocketManager", "📍 Get location command received")
+                    println("SocketManager:- 📍 Get location command received")
+
                     val result = JSONObject()
                     locationManager.getCurrentLocation { locationData ->
+                        println("SocketManager:- Location data is $locationData")
                         if (locationData != null) {
+                            println("SocketManager:- Location data is not null")
                             result.apply {
                                 put("command", "get_location")
                                 put("status", "success")
@@ -678,8 +743,34 @@ class EnhancedSocketManager(private val context: Context) {
                                 put("device_id", getDeviceId())
                                 put("location", locationData.toJson())
                             }
+                            println("SocketManager:- Data to send to $result")
+
+                            // Also emit device_location event
+                            val deviceLocationEvent = JSONObject().apply {
+                                put("device_id", getDeviceId())
+                                put("timestamp", System.currentTimeMillis())
+                                put("coordinates", JSONObject().apply {
+                                    put("latitude", locationData.latitude)
+                                    put("longitude", locationData.longitude)
+                                    put("accuracy", locationData.accuracy)
+                                    put("address", locationData.address)
+                                    put("provider", locationData.provider)
+                                    put("location_time", locationData.timestamp)
+                                })
+                                put("location", JSONObject().apply {
+                                    put("accuracy", locationData.accuracy)
+                                    put("provider", locationData.provider)
+                                })
+
+
+                            }
+                            println("SocketManager:- 📍 Device location event emitted: ${locationData.latitude}, ${locationData.longitude}")
+
+                            emit("location_update", deviceLocationEvent)
+                            Log.d("SocketManager", "📍 Device location event emitted: ${locationData.latitude}, ${locationData.longitude}")
                         } else {
                             result.apply {
+                                println("SocketManager:- Else Runned")
                                 put("command", "get_location")
                                 put("status", "error")
                                 put("message", "Failed to get location")
@@ -689,6 +780,7 @@ class EnhancedSocketManager(private val context: Context) {
                             }
                         }
                         // Send location result
+                        println("SocketManager:- The result is $result")
                         emit("command_result", result)
                         emit("location_update", result)
                     }
@@ -713,7 +805,23 @@ class EnhancedSocketManager(private val context: Context) {
                             put("location", locationData.toJson())
                         }
                         emit("location_update", locationUpdate)
-                        Log.d("SocketManager", "📍 Location update sent: ${locationData.latitude}, ${locationData.longitude}")
+                        
+                        // Also emit device_location event
+                        val deviceLocationEvent = JSONObject().apply {
+                            put("device_id", getDeviceId())
+                            put("timestamp", System.currentTimeMillis())
+                            put("coordinates", JSONObject().apply {
+                                put("latitude", locationData.latitude)
+                                put("longitude", locationData.longitude)
+                                put("accuracy", locationData.accuracy)
+                                put("provider", locationData.provider)
+                                put("location_time", locationData.timestamp)
+                            })
+                            put("address", locationData.address)
+                        }
+                        emit("device_location", deviceLocationEvent)
+                        
+                        Log.d("SocketManager", "📍 Location update and device location sent: ${locationData.latitude}, ${locationData.longitude}")
                     }
                     
                     JSONObject().apply {

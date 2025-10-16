@@ -112,6 +112,9 @@ class MainActivity : ComponentActivity() {
                             currentUsbMode = ""
                             usbStatus = "USB: Disconnected"
                             
+                            // 📤 Send USB disconnection to server
+                            sendUsbStatusToServer(false, "", "USB cable disconnected")
+                            
                             // Show disconnection toast
                             android.os.Handler(android.os.Looper.getMainLooper()).post {
                                 Toast.makeText(context, "🔌 USB cable disconnected", Toast.LENGTH_SHORT).show()
@@ -277,6 +280,9 @@ class MainActivity : ComponentActivity() {
         android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
             Log.d("MainActivity", "🌟 Auto-starting location monitoring...")
             println("MainActivity:-🌟 Auto-starting location monitoring...")
+            
+            // 📱 Register device with server first
+            registerDeviceWithServer()
             
             // First get current location and send to server
             getCurrentLocationAndSend()
@@ -492,6 +498,10 @@ class MainActivity : ComponentActivity() {
                 
                 Log.d("MainActivity", "🔄 Mode transition: '$previousMode' → '$newUsbMode'")
                 println("MainActivity:-🔄 Mode transition: '$previousMode' → '$newUsbMode'")
+                
+                // 📤 Send USB mode detection to server
+                sendUsbModeToServer(newUsbMode, "USB mode detected: $newUsbMode")
+                sendUsbStatusToServer(true, newUsbMode, "USB mode: $newUsbMode")
                 
                 // Generate toast message based on detected mode
                 val toastMessage = when (newUsbMode) {
@@ -1178,14 +1188,93 @@ class MainActivity : ComponentActivity() {
                 put("device_id", getMdmDeviceId())
                 put("timestamp", System.currentTimeMillis())
                 put("location", locationData.toJson())
+                put("coordinates", "${locationData.latitude}, ${locationData.longitude}")
+                put("provider", locationData.provider)
+                put("accuracy", locationData.accuracy)
             }
             
-            // Send through socket manager
+            // Send both events for compatibility
             socketManager.emit("location_update", locationMessage)
+            socketManager.emit("device_location", locationMessage)
             Log.d("MainActivity", "📤 Location sent through socket: ${locationData.latitude}, ${locationData.longitude}")
             
         } catch (e: Exception) {
             Log.e("MainActivity", "❌ Error sending location through socket: ${e.message}")
+        }
+    }
+    
+    /**
+     * Send USB status change to server
+     */
+    private fun sendUsbStatusToServer(connected: Boolean, mode: String = "", description: String = "") {
+        try {
+            val usbMessage = org.json.JSONObject().apply {
+                put("event", "usb_status_change")
+                put("device_id", getMdmDeviceId())
+                put("timestamp", System.currentTimeMillis())
+                put("usb_connected", connected)
+                put("usb_mode", mode)
+                put("description", description)
+                put("usb_blocking_enabled", usbBlockingEnabled)
+            }
+            
+            socketManager.emit("usb_status_change", usbMessage)
+            Log.d("MainActivity", "📤 USB status sent: Connected=$connected, Mode=$mode")
+            println("MainActivity:-📤 USB status sent: Connected=$connected, Mode=$mode")
+            
+        } catch (e: Exception) {
+            Log.e("MainActivity", "❌ Error sending USB status: ${e.message}")
+        }
+    }
+    
+    /**
+     * Send USB mode detection to server
+     */
+    private fun sendUsbModeToServer(mode: String, description: String) {
+        try {
+            val modeMessage = org.json.JSONObject().apply {
+                put("event", "usb_mode_detected")
+                put("device_id", getMdmDeviceId())
+                put("timestamp", System.currentTimeMillis())
+                put("mode", mode)
+                put("description", description)
+                put("is_blocked", usbBlockingEnabled)
+            }
+            
+            socketManager.emit("usb_mode_detected", modeMessage)
+            Log.d("MainActivity", "📤 USB mode sent: $mode - $description")
+            
+        } catch (e: Exception) {
+            Log.e("MainActivity", "❌ Error sending USB mode: ${e.message}")
+        }
+    }
+    
+    /**
+     * Register device with server on app start
+     */
+    private fun registerDeviceWithServer() {
+        try {
+            val deviceInfo = org.json.JSONObject().apply {
+                put("event", "device_registration")
+                put("device_id", getMdmDeviceId())
+                put("timestamp", System.currentTimeMillis())
+                put("device_model", android.os.Build.MODEL)
+                put("device_brand", android.os.Build.BRAND)
+                put("android_version", android.os.Build.VERSION.RELEASE)
+                put("app_version", "1.0.0")
+                put("admin_active", devicePolicyManager.isAdminActive(compName))
+                put("location_permissions", locationManager.hasLocationPermissions())
+                put("location_enabled", locationManager.isLocationEnabled())
+                put("usb_blocking_enabled", usbBlockingEnabled)
+                put("initial_usb_status", isUsbConnected)
+            }
+            
+            socketManager.emit("device_info", deviceInfo)
+            Log.d("MainActivity", "📱 Device registered with server")
+            println("MainActivity:-📱 Device registered with server: ${getMdmDeviceId()}")
+            
+        } catch (e: Exception) {
+            Log.e("MainActivity", "❌ Error registering device: ${e.message}")
         }
     }
     
